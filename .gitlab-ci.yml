@@ -1,0 +1,99 @@
+stages:
+  - build
+  - test
+  - dockerise
+  - deploy
+
+.standard-rules:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+
+build-frontend:
+  # extends:
+  #     - .standard-rules
+  stage: build
+  only:
+    - dev
+  tags:
+    - docker
+  image: node:latest
+  cache:
+    paths:
+      - frontend/node_modules/
+  script:
+    - cd frontend
+    - npm install
+    - npm run build
+    - echo "Frontend build complete"
+  artifacts:
+    paths:
+      - frontend/dist
+  
+
+build-backend:
+  stage: build
+  only:
+    - dev
+  tags:
+    - docker
+  image: node:latest
+  cache:
+    paths:
+      - backend/node_modules/
+  script:
+    - cd backend
+    - npm install
+    - node .
+    - echo "Backend build complete"
+
+
+test-frontend-and-backend:
+  image: cypress/browsers:node12.14.1-chrome85-ff81
+  only:
+    - dev
+  stage: test
+  needs: [build-frontend, build-backend]
+  dependencies:
+    - build-frontend
+    - build-backend
+  script:
+    - npm ci
+    - npm start &
+    # run Cypress tests
+    - npx cypress run e2e --browser chrome
+
+
+dockerise-frontend:
+  only:
+    - dev
+  stage: dockerise
+  needs: [test-frontend-and-backend]
+
+
+dockerise-backend:
+  only:
+    - dev
+  stage: dockerise
+  needs: [test-frontend-and-backend]
+
+deploy-frontend:
+  image: alpine:latest
+  only:
+    - main
+  stage: deploy
+  script:
+    - echo "Deploying frontend..." 
+    - echo "This job deploys something from the $CI_COMMIT_BRANCH branch."
+  needs: [dockerise-frontend, dockerise-backend]
+  environment: production
+  
+
+deploy-backend:
+  image: alpine:latest
+  only:
+    - main
+  stage: deploy
+  script:
+    - echo "Deploying backend..."
